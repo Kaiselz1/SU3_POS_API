@@ -1,5 +1,6 @@
 POS Project
 ------------------
+Tool
 
 + API
   + Flask
@@ -9,6 +10,7 @@ POS Project
   + Angular v20
 
 ------------------
+Database Structure
 
 + branch
   + id(pk)
