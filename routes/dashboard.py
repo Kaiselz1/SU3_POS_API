@@ -1,5 +1,9 @@
-from app import app
+from app import app, abort
 
 @app.route('/')
-def hello_world():
-    return 'Welcome!'
+def dashboard():
+    return 'dashboard'
+
+@app.route('/admin')
+def admin():
+    abort(403)
