@@ -1,4 +1,8 @@
-from models.branch import *
+from flask_sqlalchemy import SQLAlchemy
+
+# Central db object
+db = SQLAlchemy()
+
 from models.category import *
 from models.customer import *
 from models.product import *

@@ -1,15 +1,10 @@
-from app import app, abort
+# from app import app
 
-@app.route('/')
+# @app.route('/')
+from flask import Blueprint, render_template, current_app
+
+dashboard_bp = Blueprint('dashboard_bp', __name__)
+
+@dashboard_bp.route('/dashboard')
 def dashboard():
     return '<h1>dashboard</h1>'
-
-@app.route('/admin')
-def admin():
-    abort(403)
-
-@app.route('/list')
-def list():
-    arr = [1,2]
-    arr[3] = 5  # This will raise an IndexError
-    return '<h1>list</h1>'
