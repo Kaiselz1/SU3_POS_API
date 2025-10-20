@@ -4,6 +4,7 @@ from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash
 from PIL import Image, ImageDraw, ImageFont
 from models.user import db, User
+from datetime import datetime
 
 user_bp = Blueprint("user_bp", __name__)
 
@@ -44,12 +45,12 @@ def add_watermark(image_path):
 
     # Bottom-right corner
     position = (img.width - text_width - 10, img.height - text_height - 10)
-    draw.text(position, watermark_text, fill=(0, 0, 0, 128), font=font)
+    draw.text(position, watermark_text, fill=(0, 0, 0), font=font)
 
     # --- Fix for JPEG ---
     ext = os.path.splitext(image_path)[1].lower()
     if ext in ['.jpg', '.jpeg']:
-        img = img.convert("RGB")  # JPEG cannot handle alpha
+        img = img.convert("RGB")
 
     img.save(image_path)
     img.close()
@@ -57,6 +58,8 @@ def add_watermark(image_path):
 # --- CRUD ---
 @user_bp.route('/user', methods=['GET', 'POST', 'PUT', 'DELETE'])
 def user_crud():
+    upload_folder = os.path.join(current_app.root_path, 'static', 'uploads')
+    os.makedirs(upload_folder, exist_ok=True)
     # --- Create ---
     if request.method == 'POST':
         user_name = request.form.get('user_name')
@@ -73,21 +76,28 @@ def user_crud():
         if error:
             return jsonify({"message": error}), 400
 
-        # --- Save image ---
-        filename = secure_filename(file.filename)
-        save_path = os.path.join(current_app.root_path, 'static', 'uploads', filename)
+        # --- Generate unique filename ---
+        original_name, ext = os.path.splitext(file.filename)
+        base_name = secure_filename(original_name)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_filename = f"{base_name}_{timestamp}{ext.lower()}"
+        save_path = os.path.join(upload_folder, unique_filename)
+
         file.save(save_path)
         add_watermark(save_path)
 
-        # --- Save user ---
         hashed_pw = generate_password_hash(password)
-        new_user = User(user_name=user_name, password=hashed_pw, profile=f"uploads/{filename}")
+        new_user = User(
+            user_name=user_name,
+            password=hashed_pw,
+            profile=f"uploads/{unique_filename}"
+        )
         db.session.add(new_user)
         db.session.commit()
-
         return jsonify({
             "message": "User created", 
-            "id": new_user.id
+            "id": new_user.id,
+            "profile": new_user.profile
         }), 201
     
     # --- Read ---
@@ -113,48 +123,61 @@ def user_crud():
 
     # --- Update ---
     elif request.method == 'PUT':
-        data = request.form
-        user_id = data.get('id')
-        if not user_id:
-            return jsonify({"message": "id is required"}), 400
-
+        user_id = request.form.get('id')
         user = User.query.get(user_id)
         if not user:
             return jsonify({"message": "User not found"}), 404
 
-        if 'user_name' in data:
-            user.user_name = data['user_name']
-        if 'password' in data:
-            user.password = generate_password_hash(data['password'])
-        if 'profile' in request.files:
-            file = request.files['profile']
+        user_name = request.form.get('user_name')
+        password = request.form.get('password')
+        file = request.files.get('profile')
+
+        # --- Update name/password if provided ---
+        if user_name:
+            user.user_name = user_name
+        if password:
+            user.password = generate_password_hash(password)
+
+        # --- Handle image replacement ---
+        if file:
             error = validate_image(file)
             if error:
                 return jsonify({"message": error}), 400
-            filename = secure_filename(file.filename)
-            save_path = os.path.join(current_app.root_path, 'static', 'uploads', filename)
+
+            # Delete old image
+            old_path = os.path.join(current_app.root_path, 'static', user.profile)
+            if os.path.exists(old_path):
+                os.remove(old_path)
+
+            # Save new image with unique name
+            original_name, ext = os.path.splitext(file.filename)
+            base_name = secure_filename(original_name)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            unique_filename = f"{base_name}_{timestamp}{ext.lower()}"
+            save_path = os.path.join(upload_folder, unique_filename)
             file.save(save_path)
             add_watermark(save_path)
-            user.profile = f"uploads/{filename}"
+
+            user.profile = f"uploads/{unique_filename}"
 
         db.session.commit()
-        return jsonify({"message": "User updated"}), 200
+        return jsonify({"message": "User updated successfully"}), 200
 
     # --- Delete ---
     elif request.method == 'DELETE':
         user_id = request.form.get('id')
-        if not user_id:
-            return jsonify({"message": "id is required"}), 400
-
         user = User.query.get(user_id)
         if not user:
             return jsonify({"message": "User not found"}), 404
 
-        file_path = os.path.join(current_app.root_path, 'static', user.profile)
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        # Delete image file
+        if user.profile:
+            image_path = os.path.join(current_app.root_path, 'static', user.profile)
+            if os.path.exists(image_path):
+                os.remove(image_path)
 
         db.session.delete(user)
         db.session.commit()
-        return jsonify({"message": "User deleted"}), 200
+
+        return jsonify({"message": "User deleted successfully"}), 200
 
